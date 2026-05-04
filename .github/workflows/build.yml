@@ -1,0 +1,59 @@
+name: Build BlueZ Backport
+
+on:
+  push:
+    tags:
+      - '*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build arm64 package
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/arm64
+          load: true
+          tags: bluez-backport:arm64
+
+      - name: Extract arm64 debs
+        run: |
+          docker create --name bluez-arm64 bluez-backport:arm64
+          mkdir -p output/arm64
+          docker cp bluez-arm64:/output/. output/arm64/
+          docker rm bluez-arm64
+
+      - name: Build amd64 package
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: bluez-backport:amd64
+
+      - name: Extract amd64 debs
+        run: |
+          docker create --name bluez-amd64 bluez-backport:amd64
+          mkdir -p output/amd64
+          docker cp bluez-amd64:/output/. output/amd64/
+          docker rm bluez-amd64
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          files: |
+            output/arm64/*.deb
+            output/amd64/*.deb

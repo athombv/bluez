@@ -1,33 +1,45 @@
-# Use a Debian-based image as the base image
-FROM debian:bullseye
+# Build BlueZ 5.82 (from Trixie) for Bookworm
+FROM debian:bookworm
 
-RUN echo "deb-src http://deb.debian.org/debian bullseye main" >> /etc/apt/sources.list
-# Install the required packages for building Debian packages and BlueZ
+# Add source repos
+RUN echo "deb-src http://deb.debian.org/debian bookworm main" >> /etc/apt/sources.list
+
 RUN apt-get update && \
-    apt-get install -y dh-make devscripts dpkg-dev git-buildpackage wget
+    apt-get install -y --no-install-recommends \
+        devscripts dpkg-dev wget ca-certificates \
+        build-essential fakeroot
 
-# Set up the build environment
 WORKDIR /buildroot
-# Download the BlueZ 5.66 source code
-RUN wget http://deb.debian.org/debian/pool/main/b/bluez/bluez_5.66.orig.tar.xz
-RUN mkdir build
 
-COPY ./debian /buildroot/build/debian
+# Download BlueZ 5.82 Trixie source package (source + debian packaging + patches)
+RUN wget http://deb.debian.org/debian/pool/main/b/bluez/bluez_5.82.orig.tar.gz && \
+    wget http://deb.debian.org/debian/pool/main/b/bluez/bluez_5.82-1.1.debian.tar.xz && \
+    wget http://deb.debian.org/debian/pool/main/b/bluez/bluez_5.82-1.1.dsc
 
-# Install the build dependencies for the package
-RUN apt-get install -y flex bison libdbus-1-dev libglib2.0-dev libdw-dev libudev-dev libreadline-dev libical-dev libasound2-dev libjson-c-dev python3-docutils udev check systemd
-RUN apt-get build-dep -y bluez
+# Extract source package
+RUN dpkg-source -x bluez_5.82-1.1.dsc
 
-RUN ls -al .
-# RUN cd bluez-5.66 && ./bootstrap
-RUN cd build && dpkg-buildpackage -v -us -uc -b
+WORKDIR /buildroot/bluez-5.82
 
-# Publish the Debian package to GHCR
-ARG GITHUB_TOKEN
-RUN echo "machine github.com login $GITHUB_TOKEN" > ~/.netrc && \
-    echo "machine api.github.com login $GITHUB_TOKEN" >> ~/.netrc && \
-    git config --global user.email "you@example.com" && \
-    git config --global user.name "Your Name" && \
-    git remote add origin https://github.com/your-org/your-repo.git && \
-    git push --set-upstream origin master && \
-    ghcr.io/your-org/your-repo/debian/$(ls *.deb)
+# Bookworm compatibility: systemd-dev does not exist in bookworm
+RUN sed -i 's/systemd-dev/systemd/' debian/control
+
+# Remove lsb-base dependency (not required by bluez 5.82, was leftover in old packaging)
+# Add backport version to changelog
+RUN DEBEMAIL="backport@local" DEBFULLNAME="Backport" \
+    dch --local ~bpo12+ --distribution bookworm-backports "Backport to bookworm."
+
+# Install build dependencies
+RUN apt-get install -y --no-install-recommends \
+        debhelper \
+        flex bison libdbus-1-dev libglib2.0-dev libdw-dev libudev-dev \
+        libreadline-dev libical-dev libasound2-dev libjson-c-dev \
+        libell-dev python3-docutils python3-pygments udev check systemd \
+        libebook1.2-dev
+
+# Build the package
+RUN dpkg-buildpackage -us -uc -b
+
+# Collect output debs
+WORKDIR /buildroot
+RUN mkdir -p /output && cp *.deb /output/ 2>/dev/null || true
