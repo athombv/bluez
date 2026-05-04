@@ -16,7 +16,7 @@ The build runs entirely inside a Docker container based on `debian:bookworm`. Th
 
 ## Releases
 
-A GitHub Actions workflow automatically builds packages for both `arm64` and `amd64` on every tag push. The `.deb` files are published as assets on the corresponding GitHub release.
+A GitHub Actions workflow automatically builds `arm64` packages on every tag push. The `.deb` files are published as assets on the corresponding GitHub release.
 
 To create a release:
 
